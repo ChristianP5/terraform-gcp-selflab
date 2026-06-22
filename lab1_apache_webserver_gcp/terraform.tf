@@ -5,4 +5,9 @@ terraform {
       version = "7.37.0"
     }
   }
+
+  backend "gcs" {
+    bucket = "c_terraform_remote_state_bucket"
+    prefix = "lab1/state"
+  }
 }
