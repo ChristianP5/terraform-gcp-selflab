@@ -1,0 +1,26 @@
+# An OS policy to check if Cockpit is installed and running on the instance. If not, it will install and start the Cockpit service.
+id: ensure-cockpit-installed-and-running
+mode: ENFORCEMENT
+resourceGroups:
+  - resources:
+      id: ensure-cockpit-installed-and-running
+      exec:
+        validate:
+          interpreter: SHELL
+          # If cockpit.service is active, return an exit code
+          # 100 to indicate that the instance is in compliant state.
+          # Otherwise, return an exit code of 101 to run `enforce` step.
+          script: |-
+            is_active=$(systemctl is-active cockpit.service)
+            result=$(systemctl show -p Result --value cockpit.service)
+
+            if [ "$is_active" == "active" ] && [ "$result" == "success" ]; then
+              exit 100;
+            else
+              exit 101;
+            fi
+        enforce:
+          interpreter: SHELL
+          # If cockpit.service is not active, install and start the Cockpit service.
+          script: |-
+            sudo apt update && sudo apt install -y cockpit && sudo systemctl start cockpit.service && sudo systemctl enable cockpit.service && exit 100
