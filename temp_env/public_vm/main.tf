@@ -1,6 +1,10 @@
+locals {
+  prefix = "c-temp-lab-publicvm"
+}
+
 # Create a VPC network with custom MTU and routing mode
 resource "google_compute_network" "vpc_network" {
-  name                         = "c-temp-vpc-tf"
+  name                         = "${local.prefix}-vpc-tf"
   auto_create_subnetworks      = false
   mtu                          = 1460
   routing_mode                 = "REGIONAL"
@@ -43,7 +47,7 @@ resource "google_compute_router_nat" "nat" {
 
 # Create Service Account to be used by the Apache web server instance
 resource "google_service_account" "primary_sa" {
-  account_id   = "c-temp-tf-sa"
+  account_id   = "${local.prefix}-tf-sa"
   display_name = "Temporary SA for Temporary VM Instance (Terraform)"
 }
 
@@ -52,14 +56,38 @@ data "google_compute_image" "centos_image" {
   project = "centos-cloud"
 }
 
+data "google_compute_image" "debian_image" {
+  family  = "debian-13"
+  project = "debian-cloud"
+}
+
+locals {
+  effective_os = var.os == "CentOS" ? data.google_compute_image.centos_image.self_link : data.google_compute_image.debian_image.self_link
+  effective_allowed_predefined_inbound_ports = {
+    80 : var.allow_http
+    8080 : var.allow_http
+    443 : var.allow_http
+  }
+
+  effective_allowed_custom_inbound_ports_list     = { for i, v in var.allow_custom_ports : v => true }
+  effective_allowed_predefined_inbound_ports_list = { for k, v in local.effective_allowed_predefined_inbound_ports : k => v if v == true }
+  effective_allowed_inbound_ports_list            = merge(local.effective_allowed_custom_inbound_ports_list, local.effective_allowed_predefined_inbound_ports_list)
+}
+
+resource "google_compute_address" "primary_instance_address" {
+  count = var.vm_count
+  name = "${local.prefix}-tf-instance-${count.index}-ip"
+}
+
 resource "google_compute_instance" "primary_instance" {
-  name         = "c-temp-tf-instance"
+  count = var.vm_count
+  name         = "${local.prefix}-tf-instance-${count.index}"
   machine_type = "e2-micro"
   zone         = "asia-southeast2-a"
 
   boot_disk {
     initialize_params {
-      image = data.google_compute_image.centos_image.self_link
+      image = local.effective_os
       size  = 25
       type  = "pd-balanced"
     }
@@ -67,6 +95,11 @@ resource "google_compute_instance" "primary_instance" {
 
   network_interface {
     subnetwork = google_compute_subnetwork.subnetwork.name
+
+    access_config {
+      // Ephemeral public IP
+      nat_ip = google_compute_address.primary_instance_address[count.index].address
+    }
   }
   service_account {
     # Google recommends custom service accounts that have
@@ -83,11 +116,31 @@ resource "google_compute_firewall" "firewall_rule_allow_iap_ssh" {
 
   allow {
     protocol = "tcp"
-    ports    = ["22"]
+    ports    = [22]
+  }
+  direction     = "INGRESS"
+  source_ranges = ["35.235.240.0/20"]
+  priority      = 1000
+
+}
+
+
+resource "google_compute_firewall" "firewall_rule_allow_custom" {
+  name    = "${google_compute_network.vpc_network.name}-allow-custom"
+  network = google_compute_network.vpc_network.name
+
+
+
+  dynamic "allow" {
+    for_each = local.effective_allowed_inbound_ports_list
+    content {
+      protocol = "tcp"
+      ports    = [allow.key]
+    }
   }
 
   direction     = "INGRESS"
-  source_ranges = ["35.235.240.0/20"]
+  source_ranges = ["0.0.0.0/0"]
   priority      = 1000
 
 }
