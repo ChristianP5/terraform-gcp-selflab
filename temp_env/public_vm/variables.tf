@@ -19,6 +19,16 @@ variable "os" {
 }
 
 variable "vm_count" {
-  type = number
+  type        = number
   description = "Number of Virtual Machines"
+}
+
+variable "allow_custom_labels" {
+  type        = map(string)
+  description = "Custom Labels assigned to Compute Engine Instances"
+}
+
+variable "custom_assign_iam_roles" {
+  type        = map
+  description = "Custom IAM Role Assignments on the Service Account used by the Compute Engine Instances"
 }

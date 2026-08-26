@@ -45,10 +45,12 @@ resource "google_compute_router_nat" "nat" {
   }
 }
 
-# Create Service Account to be used by the Apache web server instance
+# Create Service Account to be used by the Instance
 resource "google_service_account" "primary_sa" {
-  account_id   = "${local.prefix}-tf-sa"
-  display_name = "Temporary SA for Temporary VM Instance (Terraform)"
+  count = var.vm_count
+
+  account_id   = "${local.prefix}-tf-vm-${count.index}-sa"
+  display_name = "Temporary SA for Temporary VM Instance with Index ${count.index} (Terraform)"
 }
 
 data "google_compute_image" "centos_image" {
@@ -76,11 +78,11 @@ locals {
 
 resource "google_compute_address" "primary_instance_address" {
   count = var.vm_count
-  name = "${local.prefix}-tf-instance-${count.index}-ip"
+  name  = "${local.prefix}-tf-instance-${count.index}-ip"
 }
 
 resource "google_compute_instance" "primary_instance" {
-  count = var.vm_count
+  count        = var.vm_count
   name         = "${local.prefix}-tf-instance-${count.index}"
   machine_type = "e2-micro"
   zone         = "asia-southeast2-a"
@@ -104,9 +106,13 @@ resource "google_compute_instance" "primary_instance" {
   service_account {
     # Google recommends custom service accounts that have
     # cloud-platform scope and permissions granted via IAM Roles.
-    email  = google_service_account.primary_sa.email
+    email  = google_service_account.primary_sa[count.index].email
     scopes = ["cloud-platform"]
   }
+
+  labels = var.allow_custom_labels
+  allow_stopping_for_update = true
+  
 }
 
 # Configure VPC Firewall rules
